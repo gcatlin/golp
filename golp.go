@@ -12,12 +12,14 @@ import (
 
 // Evaluate an expression
 func eval(e interface{}) interface{} {
+	fmt.Printf("[eval] expression: %v (%T)\n", e, e)
 	switch e := e.(type) {
+	case string:
+		// TODO lookup in env
+		return e
 	case bool, uint64, float64:
 		return e
-	case string:
-		return e
-	case []string:
+	case []interface{}:
 		switch e[0] {
 		case "quote": // (quote exp)
 			return e[1:]
@@ -39,7 +41,7 @@ func eval(e interface{}) interface{} {
 }
 
 // Read a Scheme expression from a string.
-func read(s string) ([]interface{}, error) {
+func read(s string) (interface{}, error) {
 	return (read_from(tokenize(s)))
 }
 
@@ -50,7 +52,7 @@ func tokenize(s string) []string {
 }
 
 // Read an expression from a sequence of tokens.
-func read_from(tokens []string) ([]interface{}, error) {
+func read_from(tokens []string) (interface{}, error) {
 	var token string
 	if len(tokens) == 0 {
 		return nil, errors.New("unexpected EOF while reading")
@@ -58,29 +60,29 @@ func read_from(tokens []string) ([]interface{}, error) {
 	token, tokens = tokens[len(tokens)-1], tokens[:len(tokens)-1]
 	switch token {
 	case "(":
-		l := make([]interface{}, 0)
+		L := []interface{}{}
 		for tokens[0] != ")" {
 			token, _ := read_from(tokens) // TODO handle err
-			l = append(l, token)
+			L = append(L, token)
 		}
 		tokens = tokens[:len(tokens)-1]
-		return l, nil
+		return L, nil
 	case ")":
 		return nil, errors.New("unexpected )")
 	}
-	return []interface{}{atom(token)}, nil
+	return atom(token), nil
 }
 
 // Bools, ints, and floats are converted; every other token is a symbol.
 func atom(s string) interface{} {
-	if b, err := strconv.ParseBool(s); (s == "true" || s == "false") && err != nil {
-		return b
+	if f, err := strconv.ParseFloat(s, 64); (strings.IndexAny(s, "0123456789") >= 0) && err != nil {
+		return f
 	}
-	if i, err := strconv.ParseUint(s, 0, 64); err != nil {
+	if i, err := strconv.ParseUint(s, 0, 64); (strings.IndexAny(s, "0123456789") >= 0) && err != nil {
 		return i
 	}
-	if f, err := strconv.ParseFloat(s, 64); err != nil {
-		return f
+	if b, err := strconv.ParseBool(s); (s == "true" || s == "false") && err != nil {
+		return b
 	}
 	return s
 }
