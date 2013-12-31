@@ -10,79 +10,161 @@ import (
 	"strings"
 )
 
+type Any interface{}
+
+type Env struct {
+	m     map[string]Any
+	outer *Env
+}
+
+func (e *Env) find(k Any) (*Env, bool) {
+	if _, ok := e.m[k.(string)]; ok {
+		return e, true
+	} else if e.outer != nil {
+		return e.outer.find(k)
+	}
+	return nil, false
+}
+
+func (e *Env) get(k Any) Any {
+	return e.m[k.(string)]
+}
+
+func (e *Env) merge(m map[string]Any) {
+	for k, v := range m {
+		e.m[k] = v
+	}
+}
+
+func (e *Env) set(k Any, v Any) {
+	e.m[k.(string)] = v
+}
+
+func NewEnv(keys []Any, vals []Any, outer *Env) *Env {
+	zipped := map[string]Any{}
+	vlen := len(vals)
+	for i, key := range keys {
+		if i < vlen {
+			zipped[key.(string)] = vals[i]
+		}
+	}
+	return &Env{zipped, outer}
+}
+
 // Evaluate an expression
-func eval(e interface{}) interface{} {
-	fmt.Printf("[eval] expression: %v (%T)\n", e, e)
+func eval(e Any, env *Env) Any {
+	// fmt.Printf("[eval] expression: %v (%T)   env: %v\n", e, e, env)
 	switch e := e.(type) {
 	case string:
-		// TODO lookup in env
+		if environ, ok := env.find(e); ok {
+			return environ.get(e)
+		}
+		return nil
+	case bool, int64, float64:
 		return e
-	case bool, uint64, float64:
-		return e
-	case []interface{}:
-		switch e[0] {
-		case "quote": // (quote exp)
-			return e[1:]
-		case "if": // (if test then else?)
-			test := e[1]
-			then := e[2]
-			else_ := e[3]
-			if eval(test).(bool) {
-				return eval(then)
-			} else {
-				return eval(else_)
+	case []Any:
+		if len(e) > 0 {
+			switch e[0] {
+			case "quote": // (quote exp)
+				return e[1]
+			case "if": // (if test then else?)
+				if eval(e[1], env).(bool) {
+					return eval(e[2], env)
+				} else {
+					return eval(e[3], env)
+				}
+			case "set!": // (set! var exp)
+				if environ, ok := env.find(e[1]); ok {
+					environ.set(e[1], eval(e[2], env))
+				}
+			case "define", "def": // (define var exp)
+				env.set(e[1], eval(e[2], env))
+			case "lambda", "fn": // (lambda (var*) exp)
+				fmt.Printf("[lambda] e[1]: %v (%T)\n", e[1], e[1])
+				vars := e[1].([]Any)
+				exp := e[2]
+				// fmt.Printf("vars: %v\n", vars)
+				// fmt.Printf("exp: %v\n", exp)
+				return func(args ...Any) Any {
+					fmt.Printf("[lamda] vars: %v\n", vars)
+					fmt.Printf("[lamda] args: %v\n", args)
+					fmt.Printf("[lamda] env: %v\n", env)
+					fmt.Printf("[lamda] new-env: %v\n", NewEnv(vars, args, env))
+					fmt.Printf("[lamda] exp: %v\n", exp)
+					return eval(exp, NewEnv(vars, args, env))
+				}
+			case "begin": // (begin exp*)
+				var val Any
+				for _, exp := range e[1:] {
+					val = eval(exp, env)
+				}
+				return val
+			default: // (proc exp*)
+				fmt.Printf("[proc] expr: %v\n", e)
+				exprs := make([]Any, len(e))
+				for i, exp := range e {
+					fmt.Printf("[proc] exp: %v (%T)\n", exp, exp)
+					fmt.Printf("[proc] env: %v\n", env)
+					exprs[i] = eval(exp, env)
+					fmt.Printf("[proc] result: %v\n", exprs[i])
+				}
+				fmt.Printf("[proc] exprs: %v\n", exprs)
+				fn := exprs[0].(func(...Any) Any)
+				fmt.Printf("[proc] fn: %v\n", fn)
+				return fn(exprs[1:]...)
 			}
-			// case "def": // (def var exp)
-			// case "fn":
-			// case "set!": // (set! var exp)
 		}
 	}
 	return e
 }
 
 // Read a Scheme expression from a string.
-func read(s string) (interface{}, error) {
-	return (read_from(tokenize(s)))
+func read(s string) (Any, error) {
+	parsed, _, err := read_from(tokenize(s))
+	return parsed, err
 }
 
 // Converts a string into an array of tokens.
 func tokenize(s string) []string {
-	return regexp.MustCompile(`\s+`).Split(
-		strings.Replace(strings.Replace(s, "(", " ( ", -1), ")", " ) ", -1), -1)
+	return regexp.MustCompile(`\s+`).Split(strings.TrimSpace(
+		strings.Replace(strings.Replace(s, "(", " ( ", -1), ")", " ) ", -1)), -1)
 }
 
 // Read an expression from a sequence of tokens.
-func read_from(tokens []string) (interface{}, error) {
-	var token string
+func read_from(tokens []string) (Any, []string, error) {
 	if len(tokens) == 0 {
-		return nil, errors.New("unexpected EOF while reading")
+		return nil, nil, errors.New("unexpected EOF while reading")
 	}
-	token, tokens = tokens[len(tokens)-1], tokens[:len(tokens)-1]
+	token := tokens[0]
+	tokens = tokens[1:]
 	switch token {
 	case "(":
-		L := []interface{}{}
-		for tokens[0] != ")" {
-			token, _ := read_from(tokens) // TODO handle err
+		L := []Any{}
+		for len(tokens) > 0 && tokens[0] != ")" {
+			token, remaining, _ := read_from(tokens) // TODO handle err
 			L = append(L, token)
+			tokens = remaining
 		}
-		tokens = tokens[:len(tokens)-1]
-		return L, nil
+		if len(tokens) > 0 {
+			tokens = tokens[1:] // pop off ')'
+		}
+		return L, tokens, nil
 	case ")":
-		return nil, errors.New("unexpected )")
+		return token, tokens, errors.New("unexpected )")
 	}
-	return atom(token), nil
+	return atom(token), tokens, nil
 }
 
 // Bools, ints, and floats are converted; every other token is a symbol.
-func atom(s string) interface{} {
-	if f, err := strconv.ParseFloat(s, 64); (strings.IndexAny(s, "0123456789") >= 0) && err != nil {
-		return f
+func atom(s string) Any {
+	if b, err := strconv.ParseBool(s); (s == "true" || s == "false") && err == nil {
+		return b
 	}
-	if i, err := strconv.ParseUint(s, 0, 64); (strings.IndexAny(s, "0123456789") >= 0) && err != nil {
+	if i, err := strconv.ParseInt(s, 0, 64); err == nil {
 		return i
 	}
-	if b, err := strconv.ParseBool(s); (s == "true" || s == "false") && err != nil {
-		return b
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return f
 	}
 	return s
 }
@@ -92,14 +174,58 @@ func prompt() {
 }
 
 func main() {
-	//env := &Env{}
+	env := NewEnv(nil, nil, nil)
+	env.merge(map[string]Any{
+		"+": func(xs ...Any) Any {
+			sum := int64(0)
+			for _, x := range xs {
+				sum += x.(int64)
+			}
+			return sum
+		},
+		"-": func(xs ...Any) Any {
+			switch len(xs) {
+			case 0:
+				return 0
+			case 1:
+				return -1 * xs[0].(int64)
+			case 2:
+				return xs[0].(int64) - xs[1].(int64)
+			default:
+				sum := xs[0].(int64) - xs[1].(int64)
+				for _, x := range xs[2:] {
+					sum -= x.(int64)
+				}
+				return sum
+			}
+		},
+		"*": func(xs ...Any) Any {
+			sum := int64(1)
+			for _, x := range xs {
+				sum *= x.(int64)
+			}
+			return sum
+		},
+		"<=": func(xs ...Any) Any {
+			last := xs[0].(int64)
+			for _, x := range xs {
+				if x.(int64) < last {
+					return false
+				}
+				last = x.(int64)
+			}
+			return true
+		},
+	})
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for prompt(); scanner.Scan(); prompt() {
 		in := scanner.Text()
-		fmt.Println(in)
 		parsed, _ := read(in) // TODO handle err
-		fmt.Println(eval(parsed))
+		fmt.Printf("parsed: %v\n", parsed)
+		evaled := eval(parsed, env)
+		fmt.Printf("%v (%T)\n", evaled, evaled)
+		// fmt.Printf("%v (%T) %v\n", evaled, evaled, env)
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, "reading standard input:", err)
