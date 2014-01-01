@@ -161,46 +161,10 @@ func prompt() {
 func main() {
 	env := NewEnv(nil, nil, nil)
 	env.merge(map[string]Any{
-		"+": func(xs ...Any) Any {
-			sum := int64(0)
-			for _, x := range xs {
-				sum += x.(int64)
-			}
-			return sum
-		},
-		"-": func(xs ...Any) Any {
-			switch len(xs) {
-			case 0:
-				return 0
-			case 1:
-				return -1 * xs[0].(int64)
-			case 2:
-				return xs[0].(int64) - xs[1].(int64)
-			default:
-				sum := xs[0].(int64) - xs[1].(int64)
-				for _, x := range xs[2:] {
-					sum -= x.(int64)
-				}
-				return sum
-			}
-		},
-		"*": func(xs ...Any) Any {
-			sum := int64(1)
-			for _, x := range xs {
-				sum *= x.(int64)
-			}
-			return sum
-		},
-		"<=": func(xs ...Any) Any {
-			last := xs[0].(int64)
-			for _, x := range xs {
-				if x.(int64) < last {
-					return false
-				}
-				last = x.(int64)
-			}
-			return true
-		},
+		"+": Add, "-": Sub, "<": Lt, "*": Mul,
+		"=": Eq, ">": Gt, ">=": Ge, "<=": Le,
+		"not": Not,
+		"car": Car, "cdr": Cdr, "cons": Cons,
 	})
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -214,3 +178,112 @@ func main() {
 		fmt.Fprintln(os.Stderr, "reading standard input:", err)
 	}
 }
+
+func Add(xs ...Any) Any {
+	sum := int64(0)
+	for _, x := range xs {
+		sum += x.(int64)
+	}
+	return sum
+}
+
+func Car(xs ...Any) Any {
+	return xs[0].([]Any)[0]
+}
+
+func Cdr(xs ...Any) Any {
+	return xs[0].([]Any)[1:]
+}
+
+func Cons(xs ...Any) Any {
+	return append(xs[1].([]Any), xs[0].(Any))
+}
+
+func Eq(xs ...Any) Any {
+	switch len(xs) {
+	case 0:
+		return nil
+	case 1:
+		return true
+	default:
+		val := xs[0].(int64)
+		for _, x := range xs[1:] {
+			if (x != val) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+func Ge(xs ...Any) Any {
+	last := xs[0].(int64)
+	for _, x := range xs {
+		if last < x.(int64) {
+			return false
+		}
+		last = x.(int64)
+	}
+	return true
+}
+
+func Gt(xs ...Any) Any {
+	last := xs[0].(int64)
+	for _, x := range xs {
+		if last <= x.(int64) {
+			return false
+		}
+		last = x.(int64)
+	}
+	return true
+}
+
+func Lt(xs ...Any) Any {
+	last := xs[0].(int64)
+	for _, x := range xs {
+		if x.(int64) <= last {
+			return false
+		}
+		last = x.(int64)
+	}
+	return true
+}
+
+func Le(xs ...Any) Any {
+	last := xs[0].(int64)
+	for _, x := range xs {
+		if x.(int64) < last {
+			return false
+		}
+		last = x.(int64)
+	}
+	return true
+}
+
+func Mul(xs ...Any) Any {
+	prod := int64(1)
+	for _, x := range xs {
+		prod *= x.(int64)
+	}
+	return prod
+}
+
+func Not(xs ...Any) Any {
+	return xs[0].(bool) == false
+}
+
+func Sub(xs ...Any) Any {
+	switch len(xs) {
+	case 0:
+		return 0
+	case 1:
+		return -1 * xs[0].(int64)
+	default:
+		diff := xs[0].(int64)
+		for _, x := range xs[1:] {
+			diff -= x.(int64)
+		}
+		return diff
+	}
+}
+
