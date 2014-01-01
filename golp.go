@@ -53,7 +53,6 @@ func NewEnv(keys []Any, vals []Any, outer *Env) *Env {
 
 // Evaluate an expression
 func eval(e Any, env *Env) Any {
-	// fmt.Printf("[eval] expression: %v (%T)   env: %v\n", e, e, env)
 	switch e := e.(type) {
 	case string:
 		if environ, ok := env.find(e); ok {
@@ -80,17 +79,9 @@ func eval(e Any, env *Env) Any {
 			case "define", "def": // (define var exp)
 				env.set(e[1], eval(e[2], env))
 			case "lambda", "fn": // (lambda (var*) exp)
-				fmt.Printf("[lambda] e[1]: %v (%T)\n", e[1], e[1])
 				vars := e[1].([]Any)
 				exp := e[2]
-				// fmt.Printf("vars: %v\n", vars)
-				// fmt.Printf("exp: %v\n", exp)
 				return func(args ...Any) Any {
-					fmt.Printf("[lamda] vars: %v\n", vars)
-					fmt.Printf("[lamda] args: %v\n", args)
-					fmt.Printf("[lamda] env: %v\n", env)
-					fmt.Printf("[lamda] new-env: %v\n", NewEnv(vars, args, env))
-					fmt.Printf("[lamda] exp: %v\n", exp)
 					return eval(exp, NewEnv(vars, args, env))
 				}
 			case "begin": // (begin exp*)
@@ -100,17 +91,11 @@ func eval(e Any, env *Env) Any {
 				}
 				return val
 			default: // (proc exp*)
-				fmt.Printf("[proc] expr: %v\n", e)
 				exprs := make([]Any, len(e))
 				for i, exp := range e {
-					fmt.Printf("[proc] exp: %v (%T)\n", exp, exp)
-					fmt.Printf("[proc] env: %v\n", env)
 					exprs[i] = eval(exp, env)
-					fmt.Printf("[proc] result: %v\n", exprs[i])
 				}
-				fmt.Printf("[proc] exprs: %v\n", exprs)
 				fn := exprs[0].(func(...Any) Any)
-				fmt.Printf("[proc] fn: %v\n", fn)
 				return fn(exprs[1:]...)
 			}
 		}
@@ -222,10 +207,8 @@ func main() {
 	for prompt(); scanner.Scan(); prompt() {
 		in := scanner.Text()
 		parsed, _ := read(in) // TODO handle err
-		fmt.Printf("parsed: %v\n", parsed)
 		evaled := eval(parsed, env)
 		fmt.Printf("%v (%T)\n", evaled, evaled)
-		// fmt.Printf("%v (%T) %v\n", evaled, evaled, env)
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, "reading standard input:", err)
